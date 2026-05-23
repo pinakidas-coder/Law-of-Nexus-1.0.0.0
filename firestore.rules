@@ -1,0 +1,169 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Definition
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+    
+    function isSignedIn() {
+      // Allow verified users or if not applicable assume true for Google
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        request.auth.token.email == "pinaki.inko@gmail.com"
+      );
+    }
+
+    // Role helpers
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Blueprint validators
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'name', 'role', 'createdAt']) &&
+             data.keys().size() == 5 &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
+             data.role in ['admin', 'client'] &&
+             data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    function isValidAppointment(data) {
+      return data.keys().hasAll(['userId', 'name', 'phone', 'caseType', 'date', 'time', 'status', 'paymentStatus', 'createdAt']) &&
+             data.keys().size() == 9 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() <= 20 &&
+             data.caseType in ['Civil', 'Criminal', 'Tax'] &&
+             data.date is string && data.date.size() <= 32 &&
+             data.time is string && data.time.size() <= 32 &&
+             data.status in ['pending', 'approved', 'rejected', 'completed'] &&
+             data.paymentStatus in ['pending', 'paid'] &&
+             data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    function isValidCase(data) {
+      return data.keys().hasAll(['caseId', 'clientId', 'clientName', 'details', 'status', 'createdAt']) &&
+             data.keys().size() == 6 &&
+             data.caseId is string && data.caseId.size() <= 128 &&
+             data.clientId is string && data.clientId.size() <= 128 &&
+             data.clientName is string && data.clientName.size() <= 128 &&
+             data.details is string && data.details.size() <= 4000 &&
+             data.status in ['active', 'closed', 'pending'] &&
+             data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    function isValidCaseHistory(data) {
+      return data.keys().hasAll(['oldStatus', 'newStatus', 'updatedAt', 'updatedBy']) &&
+             data.keys().size() == 4 &&
+             data.oldStatus is string && data.oldStatus.size() <= 64 &&
+             data.newStatus is string && data.newStatus.size() <= 64 &&
+             data.updatedAt is string && data.updatedAt.size() <= 64 &&
+             data.updatedBy is string && data.updatedBy.size() <= 128;
+    }
+
+    function isValidClientDocument(data) {
+      return data.keys().hasAll(['userId', 'userName', 'fileName', 'fileUrl', 'uploadedAt', 'caseId']) &&
+             data.keys().size() == 6 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.userName is string && data.userName.size() <= 128 &&
+             data.fileName is string && data.fileName.size() <= 256 &&
+             data.fileUrl is string && data.fileUrl.size() <= 1024 &&
+             data.uploadedAt is string && data.uploadedAt.size() <= 64 &&
+             data.caseId is string && data.caseId.size() <= 128;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                    isValidId(userId) && 
+                    isOwner(userId) && 
+                    isValidUserProfile(incoming()) && 
+                    incoming().uid == userId && 
+                    (incoming().role == 'client' || isAdmin());
+      
+      allow update: if isSignedIn() && 
+                    isValidId(userId) && 
+                    isValidUserProfile(incoming()) && 
+                    incoming().uid == existing().uid && 
+                    incoming().createdAt == existing().createdAt &&
+                    (
+                      isAdmin() || 
+                      (isOwner(userId) && incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email']))
+                    );
+    }
+
+    match /appointments/{appointmentId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() &&
+                    isValidId(appointmentId) &&
+                    isValidAppointment(incoming()) &&
+                    (incoming().userId == request.auth.uid || isAdmin());
+                    
+      allow update: if isSignedIn() &&
+                    isValidId(appointmentId) &&
+                    isValidAppointment(incoming()) &&
+                    incoming().userId == existing().userId &&
+                    incoming().createdAt == existing().createdAt &&
+                    (
+                      isAdmin() || 
+                      (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status'])) 
+                    );
+    }
+
+    match /cases/{caseId} {
+      allow get: if isSignedIn() && (existing().clientId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.clientId == request.auth.uid || isAdmin());
+      
+      allow create: if isAdmin() && isValidId(caseId) && isValidCase(incoming());
+      
+      allow update: if isAdmin() && isValidId(caseId) && isValidCase(incoming()) && incoming().caseId == existing().caseId && incoming().createdAt == existing().createdAt;
+      
+      allow delete: if isAdmin();
+
+      match /caseHistory/{historyId} {
+        allow get: if isSignedIn() && (get(/databases/$(database)/documents/cases/$(caseId)).data.clientId == request.auth.uid || isAdmin());
+        allow list: if isSignedIn() && (get(/databases/$(database)/documents/cases/$(caseId)).data.clientId == request.auth.uid || isAdmin());
+        allow create: if isAdmin() && isValidId(historyId) && isValidCaseHistory(incoming());
+      }
+    }
+
+    match /client_documents/{documentId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() &&
+                    isValidId(documentId) &&
+                    isValidClientDocument(incoming()) &&
+                    incoming().userId == request.auth.uid;
+      
+      allow update: if isAdmin() && isValidId(documentId) && isValidClientDocument(incoming()) && incoming().userId == existing().userId && incoming().uploadedAt == existing().uploadedAt;
+      
+      allow delete: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+    }
+  }
+}

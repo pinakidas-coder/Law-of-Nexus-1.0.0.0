@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user account details and roles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "client"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "name", "role", "createdAt"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Stores legal consultation bookings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "caseType": { "type": "string", "enum": ["Civil", "Criminal", "Tax"] },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "completed"] },
+        "paymentStatus": { "type": "string", "enum": ["pending", "paid"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "phone", "caseType", "date", "time", "status", "paymentStatus", "createdAt"]
+    },
+    "Case": {
+      "title": "Case",
+      "description": "Stores legal case records",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "closed", "pending"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["caseId", "clientId", "clientName", "details", "status", "createdAt"]
+    },
+    "CaseHistory": {
+      "title": "Case History",
+      "description": "Stores history of status changes for a case",
+      "type": "object",
+      "properties": {
+        "oldStatus": { "type": "string" },
+        "newStatus": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["oldStatus", "newStatus", "updatedAt", "updatedBy"]
+    },
+    "ClientDocument": {
+      "title": "Client Document",
+      "description": "Stores documents uploaded by clients",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "caseId": { "type": "string" }
+      },
+      "required": ["userId", "userName", "fileName", "fileUrl", "uploadedAt", "caseId"]
+    }
+  },
+  "firestore": {
+    "/client_documents/{documentId}": {
+      "schema": "ClientDocument",
+      "description": "User uploaded documents"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "Consultation appointments"
+    },
+    "/cases/{caseId}": {
+      "schema": "Case",
+      "description": "Legal case records"
+    },
+    "/cases/{caseId}/caseHistory/{historyId}": {
+      "schema": "CaseHistory",
+      "description": "Status change history for a specific case"
+    }
+  }
+}
